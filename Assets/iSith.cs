@@ -7,6 +7,7 @@ using UnityEngine.XR.Interaction.Toolkit;
 public class iSith : MonoBehaviour
 {
 	private GameObject scene = null;
+
 	private GameObject rightHandController;
 	private GameObject leftHandController;
 	private XRController rightXRController;
@@ -20,42 +21,63 @@ public class iSith : MonoBehaviour
 	private GameObject PIP;
 	private Vector3 PIPpositionLF;
 
-	public Material hoverMaterial;
-	public Material hightlightedMaterial;
-	public Material defaultMaterial;
+	private float threshold = 0.3f;
 
-	private float threshold = 0.1f;
+	private XRInteractorLineVisual rightRayRenderer;
+	private XRInteractorLineVisual leftRayRenderer;
 
-	// Start is called before the first frame update
+	private Gradient redGradient;
+	private Gradient cyanGradient;
+	private Gradient greenGradient;
 
 	void Awake()
 	{
+		redGradient = new Gradient();
+		redGradient.SetKeys(
+			new GradientColorKey[] { new GradientColorKey(Color.red, 0.0f), new GradientColorKey(Color.red, 1.0f) },
+			new GradientAlphaKey[] { new GradientAlphaKey(1.0f, 0.0f), new GradientAlphaKey(1.0f, 1.0f) }
+		);
+
+		cyanGradient = new Gradient();
+		cyanGradient.SetKeys(
+			new GradientColorKey[] { new GradientColorKey(Color.cyan, 0.0f), new GradientColorKey(Color.cyan, 1.0f) },
+			new GradientAlphaKey[] { new GradientAlphaKey(1.0f, 0.0f), new GradientAlphaKey(1.0f, 1.0f) }
+		);
+
+		greenGradient = new Gradient();
+		greenGradient.SetKeys(
+			new GradientColorKey[] { new GradientColorKey(Color.green, 0.0f), new GradientColorKey(Color.green, 1.0f) },
+			new GradientAlphaKey[] { new GradientAlphaKey(1.0f, 0.0f), new GradientAlphaKey(1.0f, 1.0f) }
+		);
+
 		PIPpositionLF = Vector3.zero;
 		scene = GameObject.Find("Scene");
+		PIP = GameObject.Find("PIP");
 		rightHandController = GameObject.Find("RightHand Controller");
 		leftHandController = GameObject.Find("LeftHand Controller");
 
 		if (rightHandController != null)
+		{
 			rightXRController = rightHandController.GetComponent<XRController>();
+			rightRayRenderer = rightHandController.GetComponent<XRInteractorLineVisual>();
+		}
 
 		if (leftHandController != null)
+		{
 			leftXRController = leftHandController.GetComponent<XRController>();
-
-		PIP = GameObject.Find("PIP");
-
+			leftRayRenderer = leftHandController.GetComponent<XRInteractorLineVisual>();
+		}
+		
 		if (PIP != null)
 			PIP.SetActive(false);
 
 		collisionDetector = PIP.GetComponent<CollisionDetector>();
-		PIP.SetActive(false);
 	}
 
 	void Start()
 	{
-		//PIP.SetActive(false);
 	}
 
-	// Update is called once per frame
 	void Update()
 	{
 		Vector3 leftHandRayPoint;
@@ -68,28 +90,50 @@ public class iSith : MonoBehaviour
 		);
 
 		if (collisionDetector.collided && selectedObject == null)
-			PIP.GetComponent<MeshRenderer>().material = hoverMaterial;
-		else if (!collisionDetector.collided)
-			PIP.GetComponent<MeshRenderer>().material = defaultMaterial;
-
-		if (notParallel)
+        {
+			rightRayRenderer.invalidColorGradient = cyanGradient;
+			leftRayRenderer.invalidColorGradient = cyanGradient;
+		} else if (!collisionDetector.collided)
 		{
-			float dist = Vector3.Distance(leftHandRayPoint, rightHandRayPoint);
+			rightRayRenderer.invalidColorGradient = redGradient;
+			leftRayRenderer.invalidColorGradient = redGradient;
+		}
 
-			if (dist < threshold)
-			{
-				PIP.SetActive(true);
-				PIP.transform.position = leftHandRayPoint + (rightHandRayPoint - leftHandRayPoint) / 2;
-			}
+		// Check if the lines are not parallel and the distance between is smaller than threshold
+		if (notParallel && Vector3.Distance(leftHandRayPoint, rightHandRayPoint) < threshold)
+		{
+			// Activate sphere
+			PIP.SetActive(true);
 
+			// Place the sphere in middle
+			PIP.transform.position = leftHandRayPoint + (rightHandRayPoint - leftHandRayPoint) / 2;
+
+			// Moves and drags object
 			bool rightTriggerButton = false;
 			rightXRController.inputDevice.TryGetFeatureValue(CommonUsages.triggerButton, out rightTriggerButton);
-
+			// Keeps y-axis zero for the dragged object
+			bool rightGripButton = false;
+			rightXRController.inputDevice.TryGetFeatureValue(CommonUsages.gripButton, out rightGripButton);
+			// Rotates on z-axis
 			bool leftTriggerButton = false;
 			leftXRController.inputDevice.TryGetFeatureValue(CommonUsages.triggerButton, out leftTriggerButton);
-
+			// Rotates on x-axis
 			bool leftGripButton = false;
 			leftXRController.inputDevice.TryGetFeatureValue(CommonUsages.gripButton, out leftGripButton);
+
+			// If both right trigger and button are pressed, keep y-axis value zero
+			if (rightTriggerButton && rightGripButton && selectedObject != null)
+			{
+				Vector3 pos = new Vector3(selectedObject.transform.position.x, 0, selectedObject.transform.position.z);
+				selectedObject.transform.SetPositionAndRotation(pos, selectedObject.transform.rotation);
+			}
+
+			// If an object is being moved/dragged, change the color of the line to green
+			if (rightTriggerButton && selectedObject != null)
+            {
+				rightRayRenderer.invalidColorGradient = greenGradient;
+				leftRayRenderer.invalidColorGradient = greenGradient;
+			}
 
 			if (rightTriggerButton != rightTriggerButtonLF)
 			{
@@ -99,19 +143,20 @@ public class iSith : MonoBehaviour
 					{
 						Debug.Log("Collided with Object: " + collisionDetector.collidedObject.name);
 						SelectObject(GameObject.Find(collisionDetector.collidedObject.name));
-						PIP.GetComponent<MeshRenderer>().material = hightlightedMaterial;
+						rightRayRenderer.invalidColorGradient = greenGradient;
+						leftRayRenderer.invalidColorGradient = greenGradient;
 					}
 
 				}
 				else if (selectedObject != null)
 				{
 					DeselectObject();
-					PIP.GetComponent<MeshRenderer>().material = defaultMaterial;
+					rightRayRenderer.invalidColorGradient = redGradient;
+					leftRayRenderer.invalidColorGradient = redGradient;
 				}
 
 				rightTriggerButtonLF = rightTriggerButton;
 			}
-
 			if (leftTriggerButton)
 			{
 				if (collisionDetector.collided && selectedObjectRotate == null)
@@ -129,26 +174,9 @@ public class iSith : MonoBehaviour
 					float yDiff = PIP.transform.position.y - PIPpositionLF.y;
 					float zDiff = PIP.transform.position.z - PIPpositionLF.z;
 					Vector3 newRotation = Vector3.zero;
-					newRotation.y = xDiff * 100f + zDiff * 100f;
+					newRotation.y = xDiff * 50f + zDiff * 50f;
 					newRotation += selectedObjectRotate.transform.rotation.eulerAngles;
 					selectedObjectRotate.transform.rotation = Quaternion.Euler(newRotation);
-					//Debug.Log("xDiff:" + xDiff);
-					//Debug.Log("yDiff:" + yDiff);
-					//Debug.Log("zDiff:" + zDiff);
-					//if (Mathf.Abs(xDiff) > Mathf.Abs(yDiff))
-					//{
-					//	Vector3 newRotation = Vector3.zero;
-					//	newRotation.y = xDiff * 500f;
-					//	newRotation += selectedObjectRotate.transform.rotation.eulerAngles;
-					//	selectedObjectRotate.transform.rotation = Quaternion.Euler(newRotation);
-					//}
-					//else
-					//{
-					//	Vector3 newRotation = Vector3.zero;
-					//	newRotation.x = yDiff * 500f;
-					//	newRotation += selectedObjectRotate.transform.rotation.eulerAngles;
-					//	selectedObjectRotate.transform.rotation = Quaternion.Euler(newRotation);
-					//}
 					PIPpositionLF = PIP.transform.position;
 				}
 				
@@ -169,11 +197,8 @@ public class iSith : MonoBehaviour
 					float xDiff = PIP.transform.position.x - PIPpositionLF.x;
 					float yDiff = PIP.transform.position.y - PIPpositionLF.y;
 					float zDiff = PIP.transform.position.z - PIPpositionLF.z;
-					Debug.Log("xDiff:" + xDiff);
-					Debug.Log("yDiff:" + yDiff);
-					Debug.Log("zDiff:" + zDiff);
 					Vector3 newRotation = Vector3.zero;
-					newRotation.z = xDiff * 100f + zDiff * 100f;
+					newRotation.z = xDiff * 50f + zDiff * 50f;
 					newRotation += selectedObjectRotate.transform.rotation.eulerAngles;
 					selectedObjectRotate.transform.rotation = Quaternion.Euler(newRotation);
 					PIPpositionLF = PIP.transform.position;
@@ -192,7 +217,7 @@ public class iSith : MonoBehaviour
 	}
 
 
-	private void SelectObject(GameObject go)
+	private void SelectObject(GameObject go, bool noYAxis=false)
 	{
 		selectedObject = go;
 		selectedObject.transform.SetParent(collisionDetector.transform, true); // worldPositionStays = true
